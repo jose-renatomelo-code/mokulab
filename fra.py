@@ -1,5 +1,7 @@
 from moku.instruments import FrequencyResponseAnalyzer as fra
 import time
+import pandas as pd
+import matplotlib.pyplot as plt 
 i = fra('192.168.73.1')
 i.claim_ownership(force_connect=True)
 try: 
@@ -43,18 +45,59 @@ try:
         print(i.summary())
 
         # ===========================================
-        #         RUN SWEEP AND GET MOKU DATA
+        #         RUN SWEEP AND PLOT 
         # ===========================================
         print("\nExecutando varredura na frequência...")
         i.start_sweep()
-        moku_data = i.get_data(wait_complete=True)
-        print(moku_data['ch1']['frequency'],
-            moku_data['ch1']['magnitude'],
-            moku_data['ch1']['phase'])
-        print(moku_data['ch2']['frequency'],
-            moku_data['ch2']['magnitude'],
-            moku_data['ch2']['phase'])
-    
+
+        # Magnitude Plot Parameters
+        plt.subplot(211)
+        (line1,) = plt.semilogx([])
+        (line2,) = plt.semilogx([])
+        ax1 = plt.gca()
+        ax1.set_xlabel('Frequency (Hz)')
+        ax1.set_ylabel('Magnitude (dBm)')
+        ax1.grid()
+        # Phase Plot Parameters
+        plt.subplot(212)
+        (line3,) = plt.semilogx([])
+        (line4,) = plt.semilogx([])
+        ax2 = plt.gca()
+        ax2.set_xlabel('Frequency (Hz)')
+        ax2.set_ylabel('Phase (degrees)')
+        ax2.grid()
+
+        plt.ion()
+        plt.show()
+
+        while True: 
+            #=== Real-Time Plot ===
+            moku_data = i.get_data(wait_complete=True)
+
+            plt.subplot(211)
+            ch1_data = moku_data['ch1']
+            ch2_data = moku_data['ch2']
+
+            line1.set_xdata(ch1_data['frequency'])
+            line1.set_ydata(ch1_data['magnitude'])
+            line2.set_xdata(ch2_data['frequency'])
+            line2.set_ydata(ch2_data['magnitude'])
+
+            plt.subplot(212)
+            line3.set_xdata(ch1_data['frequency'])
+            line3.set_ydata(ch1_data['phase'])
+            line4.set_xdata(ch2_data['frequency'])
+            line4.set_ydata(ch2_data['phase'])
+
+            ax1.set_xlim(min(ch1_data['frequency']), max(ch1_data['frequency']))
+            ax1.relim()
+            ax1.autoscale_view()
+            ax2.set_xlim(min(ch2_data['frequency']), max(ch2_data['frequency']))
+            ax2.relim()
+            ax2.autoscale_view()
+
+            plt.draw()
+            plt.pause(0.001)
 
 except Exception as e: 
     print(f"Erro na execução do FRA: {e}")
@@ -66,6 +109,10 @@ finally:
     # Close outputs
     i.disable_output(channel=1)
     i.disable_output(channel=2)
+
+    # Save txt
+    df_moku = pd.DataFrame(moku_data)
+    df_moku.to_csv('moku_fra_data.txt', sep='\t')
 
     # Fecha API
     print("Fechando conexão API...")
