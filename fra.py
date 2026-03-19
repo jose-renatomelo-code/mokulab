@@ -2,8 +2,77 @@ from moku.instruments import FrequencyResponseAnalyzer as fra
 import time
 import pandas as pd
 import matplotlib.pyplot as plt 
+import numpy as np
 i = fra('192.168.73.1')
 i.claim_ownership(force_connect=True)
+
+def convert_to_impedance(Pdbm1: list, Pdbm2:list, phi:list):
+    # To voltage
+    v1_volt = np.array((2/5 *  10**(Pdbm1/10))**1/2)
+    v2_volt = np.array((2/5 *  10**(Pdbm2/10))**1/2)
+    # To impedance (real/imaginary)
+    z_mod = np.array(((v2_volt / v1_volt) - 1) * 50)
+    z_real = z_mod * np.cos(phi)
+    z_img = z_mod * np.sin(phi)
+    # To admitance (real/imaginary)
+    adm_real = (1/z_mod) * np.cos(phi)
+    adm_img = (1/z_mod) * np.sin(phi)
+    
+    return z_real, z_img, adm_real, adm_img
+
+def plot_RealTime():
+    # Magnitude Plot Parameters
+    plt.subplot(211)
+    (lineFreq,) = plt.semilogx([])
+    (lineMag1,) = plt.semilogx([])
+    ax1 = plt.gca()
+    ax1.set_xlabel('Frequency (Hz)')
+    ax1.set_ylabel('Magnitude (dBm)')
+    ax1.grid()
+    # Phase Plot Parameters
+    plt.subplot(212)
+    (lineMag2,) = plt.semilogx([])
+    ax2 = plt.gca()
+    ax2.set_xlabel('Frequency (Hz)')
+    ax2.set_ylabel('Phase (degrees)')
+    ax2.grid()
+
+    plt.ion()
+    plt.show()
+
+    while True: 
+        #=== Real-Time Plot ===
+        moku_data = i.get_data(wait_complete=True)
+
+        plt.subplot(231)
+        ch1_data = moku_data['ch1']
+        ch2_data = moku_data['ch2']
+
+        lineFreq.set_xdata(ch1_data['frequency'])
+        lineMag1.set_ydata(ch1_data['magnitude'])
+        lineMag2.set_ydata(ch2_data['magnitude'])
+
+        imp_real, imp_imag, adm_real, adm_img = convert_to_impedance(Pdbm1 = ch1_data['maagnitude'], 
+                                    Pdbm2 = ch2_data['magnitude'],
+                                    phi = ch1_data['phase'])
+        plt.subplot(212)
+        lineFreq.set_xdata(ch1_data['frequency'])
+        lineMag1.set_ydata(ch1_data['phase'])
+        lineFreq.set_xdata(ch2_data['frequency'])
+        lineMag2.set_ydata(ch2_data['phase'])
+
+        ax1.set_xlim(min(ch1_data['frequency']), max(ch1_data['frequency']))
+        ax1.relim()
+        ax1.autoscale_view()
+        ax2.set_xlim(min(ch2_data['frequency']), max(ch2_data['frequency']))
+        ax2.relim()
+        ax2.autoscale_view()
+
+        plt.draw()
+        plt.pause(0.001)
+
+        return moku_data
+
 try: 
     # Modo Input 
     i.measurement_mode("In")
@@ -19,7 +88,7 @@ try:
     
     # ===========================
     #    Configurar Canal 2
-    # =========================== 
+    # ===========================   
     # Input 2
     i.set_frontend(channel=2, impedance='50Ohm', coupling='DC',
                    range='1Vpp', bandwidth='200MHz', strict=True)
@@ -49,55 +118,7 @@ try:
         # ===========================================
         print("\nExecutando varredura na frequência...")
         i.start_sweep()
-
-        # Magnitude Plot Parameters
-        plt.subplot(211)
-        (line1,) = plt.semilogx([])
-        (line2,) = plt.semilogx([])
-        ax1 = plt.gca()
-        ax1.set_xlabel('Frequency (Hz)')
-        ax1.set_ylabel('Magnitude (dBm)')
-        ax1.grid()
-        # Phase Plot Parameters
-        plt.subplot(212)
-        (line3,) = plt.semilogx([])
-        (line4,) = plt.semilogx([])
-        ax2 = plt.gca()
-        ax2.set_xlabel('Frequency (Hz)')
-        ax2.set_ylabel('Phase (degrees)')
-        ax2.grid()
-
-        plt.ion()
-        plt.show()
-
-        while True: 
-            #=== Real-Time Plot ===
-            moku_data = i.get_data(wait_complete=True)
-
-            plt.subplot(211)
-            ch1_data = moku_data['ch1']
-            ch2_data = moku_data['ch2']
-
-            line1.set_xdata(ch1_data['frequency'])
-            line1.set_ydata(ch1_data['magnitude'])
-            line2.set_xdata(ch2_data['frequency'])
-            line2.set_ydata(ch2_data['magnitude'])
-
-            plt.subplot(212)
-            line3.set_xdata(ch1_data['frequency'])
-            line3.set_ydata(ch1_data['phase'])
-            line4.set_xdata(ch2_data['frequency'])
-            line4.set_ydata(ch2_data['phase'])
-
-            ax1.set_xlim(min(ch1_data['frequency']), max(ch1_data['frequency']))
-            ax1.relim()
-            ax1.autoscale_view()
-            ax2.set_xlim(min(ch2_data['frequency']), max(ch2_data['frequency']))
-            ax2.relim()
-            ax2.autoscale_view()
-
-            plt.draw()
-            plt.pause(0.001)
+        moku_data = plot_RealTime()
 
 except Exception as e: 
     print(f"Erro na execução do FRA: {e}")
