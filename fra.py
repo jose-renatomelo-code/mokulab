@@ -32,7 +32,7 @@ def convert_to_impedance(Pdbm1, Pdbm2, phi):
     
     return z_real, z_img, adm_real, adm_img, v1_volt, v2_volt
 
-def plot_RealTime():
+def plot_RealTime(num_points):
     fig = plt.figure(figsize=(14, 9))
     axes = []
     lines = []
@@ -95,8 +95,8 @@ def plot_RealTime():
             fig.canvas.draw_idle()
             fig.canvas.flush_events()
             
-            # CONDIÇÃO DE PARADA: 1024 pontos atingidos
-            if len(freq) >= 1024:
+            # CONDIÇÃO DE PARADA
+            if len(freq) >= num_points:
                 i.stop_sweep()
                 print(f"\nVarredura finalizada com {len(freq)} pontos.")
                 break
@@ -106,12 +106,90 @@ def plot_RealTime():
         # Exportação final
         final_stack = np.column_stack((freq, ch1['magnitude'], ch2['magnitude'], v1, v2, z_r, z_i, a_r, a_i))
         np.savetxt("dados_finais.txt", final_stack, header="Freq,Mag1,Mag2,V1,V2,Zr,Zi,Ar,Ai")
-        print("Arquivo salvo: dados_finais.txt")
         fig.savefig("fra_plots.png", dpi=300)
-        print("\nGráfico Final salvo")
+        print("\nArquivos finais salvos com sucesso!")
 
     except Exception as e:
         print(f"Erro: {e}")
+
+def ProcessSweepAndPlot(num_points):
+    last_len = None
+    try:
+        while True:
+            data = i.get_data()
+            ch1, ch2 = data['ch1'], data['ch2']
+            
+            freq = np.asarray(ch1['frequency'], dtype=np.float64)
+            print(f"{'Ponto':<4} | {'Freq (Hz)':<4} | {'Mag CH1 (dBm)':<4} | {'Mag CH2 (dBm)':<4} | {'Fase CH1 (deg)':4} | {'Fase CH2 (deg)':4}")
+            print("-" * 70)
+            current_len = len(freq)
+            # === Update Table === 
+            if current_len > last_len:
+                for idx in range(last_len, freq):
+                    print(f"{idx+1:<4} | {ch1['frequency'][idx]:<4} | {ch1['magnitude']:<4} | {ch2['magnitude']:<4} | {ch1['phase']:<4} | {ch2['phase']:<4}")
+                last_len = current_len
+
+            # CONDIÇÃO DE PARADA
+            if current_len >= num_points:
+                i.stop_sweep()
+                print(f"\nVarredura finalizada com {len(freq)} pontos.")
+                break
+
+        # Gera o plot completo
+        fig = plt.figure(figsize=(14, 9))
+        axes = []
+        lines = []
+        plot_cfg = [
+        ('Real Impedance (Ω)', 231, True), ('Imaginary Impedance (Ω)', 232, True),
+        ('Nyquist Plot Z', 233, False), ('Real Admittance (S)', 234, True),
+        ('Imaginary Admittance (S)', 235, True), ('Nyquist Plot A', 236, False)
+        ]
+    
+        for title, sub, is_log in plot_cfg:
+            ax = fig.add_subplot(sub)
+            if is_log:
+                l1, = ax.semilogx([], [], label='Ch1')
+            else:
+                l1, = ax.plot([], [])
+            
+            ax.set_title(title, fontsize=10)
+            ax.grid(True, which='both', alpha=0.3)
+            lines.append(l1)
+            axes.append(ax)
+
+        # Chama a álgebra corrigida
+        z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
+            ch1['magnitude'], ch2['magnitude'], ch2['phase']
+        )
+
+        # Atualização dos eixos
+        plot_data = [
+            (freq, z_r),
+            (freq, z_i),
+            (z_r, z_i),
+            (freq, a_r),
+            (freq, a_i),
+            (a_r, a_i)
+        ]
+
+        for idx, (x1, y1) in enumerate(plot_data):
+                lines[idx].set_data(x1, y1)
+                axes[idx].relim()
+                axes[idx].autoscale_view()
+
+        # Exportação final
+        final_stack = np.column_stack((freq, ch1['magnitude'], ch2['magnitude'], v1, v2, z_r, z_i, a_r, a_i))
+        np.savetxt("dados_finais.txt", final_stack, header="Freq,Mag1,Mag2,V1,V2,Zr,Zi,Ar,Ai")
+        fig.savefig("fra_plots.png", dpi=300)
+        print("\nArquivos finais salvos com sucesso!") 
+        plt.tight_layout()
+        plt.show()
+
+        
+
+    except Exception as e:
+        raise e
+    
 try: 
     # Modo Input 
     i.measurement_mode("In")
@@ -136,7 +214,8 @@ try:
     i.set_output_termination(channel=2, termination='50Ohm', strict=True)
     
     # Config Sweep
-    i.set_sweep(start_frequency=1, stop_frequency=1e6, num_points=128,
+    num_points = 128
+    i.set_sweep(start_frequency=1, stop_frequency=1e6, num_points=num_points,
                 averaging_time=2e-5, averaging_cycles=1, settling_time=1e-5,
                 settling_cycles=10, dynamic_amplitude=False
                 )
@@ -156,8 +235,13 @@ try:
         #            RUN SWEEP AND PLOT 
         # ===========================================
         print("\nExecutando varredura na frequência...")
+        r_t = input("Plot Data in Real-Time? (s/n) ")
         i.start_sweep()
-        plot_RealTime()
+        if r_t == 's':
+            # Heavy function
+            plot_RealTime(num_points)
+        # Get Sweep Data and plot in the end
+        ProcessSweepAndPlot(num_points)
         
 except Exception as e: 
     print(f"Erro na execução do FRA: {e}")
@@ -166,7 +250,6 @@ finally:
     # Close outputs
     i.disable_output(channel=1)
     i.disable_output(channel=2)
-
 
     # Fecha API
     print("Fechando conexão API...")
