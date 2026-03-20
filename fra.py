@@ -113,83 +113,87 @@ def plot_RealTime(num_points):
         print(f"Erro: {e}")
 
 def ProcessSweepAndPlot(num_points):
-    last_len = None
+    last_len = 0
+    # Imprime o cabeçalho apenas UMA vez antes de começar
+    print(f"\n{'Ponto':<6} | {'Freq (Hz)':<12} | {'Mag CH1':<10} | {'Mag CH2':<10} | {'Fase CH2':<10}")
+    print("-" * 60)
+    
     try:
         while True:
             data = i.get_data()
             ch1, ch2 = data['ch1'], data['ch2']
             
             freq = np.asarray(ch1['frequency'], dtype=np.float64)
-            print(f"{'Ponto':<4} | {'Freq (Hz)':<4} | {'Mag CH1 (dBm)':<4} | {'Mag CH2 (dBm)':<4} | {'Fase CH1 (deg)':4} | {'Fase CH2 (deg)':4}")
-            print("-" * 70)
             current_len = len(freq)
-            # === Update Table === 
+
+            # === Update Table (Imprime apenas as linhas novas) === 
             if current_len > last_len:
-                for idx in range(last_len, freq):
-                    print(f"{idx+1:<4} | {ch1['frequency'][idx]:<4} | {ch1['magnitude']:<4} | {ch2['magnitude']:<4} | {ch1['phase']:<4} | {ch2['phase']:<4}")
+                for idx in range(last_len, current_len):
+                    # Acessando o índice [idx] de cada campo para a tabela
+                    f = freq[idx]
+                    m1 = ch1['magnitude'][idx]
+                    m2 = ch2['magnitude'][idx]
+                    p2 = ch2['phase'][idx]
+                    print(f"{idx+1:<6} | {f:<12.1f} | {m1:<10.2f} | {m2:<10.2f} | {p2:<10.2f}")
+                
                 last_len = current_len
 
             # CONDIÇÃO DE PARADA
             if current_len >= num_points:
                 i.stop_sweep()
-                print(f"\nVarredura finalizada com {len(freq)} pontos.")
+                print(f"\nVarredura finalizada com {current_len} pontos.")
                 break
-
-        # Gera o plot completo
-        fig = plt.figure(figsize=(14, 9))
-        axes = []
-        lines = []
-        plot_cfg = [
-        ('Real Impedance (Ω)', 231, True), ('Imaginary Impedance (Ω)', 232, True),
-        ('Nyquist Plot Z', 233, False), ('Real Admittance (S)', 234, True),
-        ('Imaginary Admittance (S)', 235, True), ('Nyquist Plot A', 236, False)
-        ]
-    
-        for title, sub, is_log in plot_cfg:
-            ax = fig.add_subplot(sub)
-            if is_log:
-                l1, = ax.semilogx([], [], label='Ch1')
-            else:
-                l1, = ax.plot([], [])
             
-            ax.set_title(title, fontsize=10)
-            ax.grid(True, which='both', alpha=0.3)
-            lines.append(l1)
-            axes.append(ax)
+            time.sleep(0.1) # Evita sobrecarga de pooling na rede
 
-        # Chama a álgebra corrigida
+        # ==========================================
+        #       GERAÇÃO DO PLOT COMPLETO (FINAL)
+        # ==========================================
+        print("Gerando gráficos e arquivos...")
+        
+        # Chama a álgebra corrigida (uma única vez para todo o array)
         z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
             ch1['magnitude'], ch2['magnitude'], ch2['phase']
         )
 
-        # Atualização dos eixos
-        plot_data = [
-            (freq, z_r),
-            (freq, z_i),
-            (z_r, z_i),
-            (freq, a_r),
-            (freq, a_i),
-            (a_r, a_i)
+        fig = plt.figure(figsize=(15, 10))
+        plot_cfg = [
+            ('Real Impedance (Ω)', 231, True, freq, z_r), 
+            ('Imaginary Impedance (Ω)', 232, True, freq, z_i),
+            ('Nyquist Plot Z', 233, False, z_r, z_i), 
+            ('Real Admittance (S)', 234, True, freq, a_r),
+            ('Imaginary Admittance (S)', 235, True, freq, a_i), 
+            ('Nyquist Plot A', 236, False, a_r, a_i)
         ]
 
-        for idx, (x1, y1) in enumerate(plot_data):
-                lines[idx].set_data(x1, y1)
-                axes[idx].relim()
-                axes[idx].autoscale_view()
+        for title, sub, is_log, x_data, y_data in plot_cfg:
+            ax = fig.add_subplot(sub)
+            if is_log:
+                ax.semilogx(x_data, y_data, 'b-', label='Data')
+            else:
+                ax.plot(x_data, y_data, 'r-', label='Data')
+            
+            ax.set_title(title, fontsize=10)
+            ax.grid(True, which='both', alpha=0.3)
+            
+            # Ajuste de labels específicos para Nyquist
+            if "Nyquist" in title:
+                ax.set_xlabel("Real")
+                ax.set_ylabel("Imaginary")
 
         # Exportação final
         final_stack = np.column_stack((freq, ch1['magnitude'], ch2['magnitude'], v1, v2, z_r, z_i, a_r, a_i))
-        np.savetxt("dados_finais.txt", final_stack, header="Freq,Mag1,Mag2,V1,V2,Zr,Zi,Ar,Ai")
-        fig.savefig("fra_plots.png", dpi=300)
-        print("\nArquivos finais salvos com sucesso!") 
+        np.savetxt("dados_finais.txt", final_stack, 
+                   header="Freq,Mag1,Mag2,V1,V2,Zr,Zi,Ar,Ai", delimiter=",")
+        
         plt.tight_layout()
+        fig.savefig("fra_plots.png", dpi=300)
+        print("Arquivos 'dados_finais.txt' e 'fra_plots.png' salvos!") 
         plt.show()
 
-        
-
     except Exception as e:
+        print(f"Erro no processamento: {e}")
         raise e
-    
 try: 
     # Modo Input 
     i.measurement_mode("In")
@@ -217,7 +221,7 @@ try:
     num_points = 128
     i.set_sweep(start_frequency=1, stop_frequency=1e6, num_points=num_points,
                 averaging_time=2e-5, averaging_cycles=1, settling_time=1e-5,
-                settling_cycles=10, dynamic_amplitude=False
+                settling_cycles=1, dynamic_amplitude=False
                 )
     # Frontend Parameters
     sweep_info = i.get_sweep()
