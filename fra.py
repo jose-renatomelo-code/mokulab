@@ -97,15 +97,18 @@ def plot_RealTime():
             
             # CONDIÇÃO DE PARADA: 1024 pontos atingidos
             if len(freq) >= 1024:
+                i.stop_sweep()
                 print(f"\nVarredura finalizada com {len(freq)} pontos.")
                 break
             
-            plt.pause(0.05)
+            plt.pause(0.1)
 
         # Exportação final
         final_stack = np.column_stack((freq, ch1['magnitude'], ch2['magnitude'], v1, v2, z_r, z_i, a_r, a_i))
         np.savetxt("dados_finais.txt", final_stack, header="Freq,Mag1,Mag2,V1,V2,Zr,Zi,Ar,Ai")
         print("Arquivo salvo: dados_finais.txt")
+        fig.savefig("fra_plots.png", dpi=300)
+        print("\nGráfico Final salvo")
 
     except Exception as e:
         print(f"Erro: {e}")
@@ -154,17 +157,12 @@ try:
         # ===========================================
         print("\nExecutando varredura na frequência...")
         i.start_sweep()
-        frame = i.get_data(wait_complete=True, timeout=120)
-        print(frame['ch1']['frequency'])
-        #plot_RealTime()
+        plot_RealTime()
         
 except Exception as e: 
     print(f"Erro na execução do FRA: {e}")
     
 finally:
-    # Stop receiving data
-    time.sleep(5)
-    i.stop_sweep()
     # Close outputs
     i.disable_output(channel=1)
     i.disable_output(channel=2)
