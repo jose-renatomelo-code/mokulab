@@ -3,7 +3,7 @@ from moku.instruments import FrequencyResponseAnalyzer
 ip = '192.168.73.1'
 
 try: 
-    moku = Oscilloscop(ip, force_connect=True, ignore_busy=True)
+    moku = FrequencyResponseAnalyzer(ip, force_connect=True, ignore_busy=True)
 
     print(f'Conectado com sucesso ao: {moku.name()}')
 

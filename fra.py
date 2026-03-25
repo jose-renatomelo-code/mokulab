@@ -5,7 +5,10 @@ from queue import Queue
 import pandas as pd
 import matplotlib.pyplot as plt 
 import numpy as np
-i = fra('192.168.73.1', ignore_busy=True, force_connect=True)
+
+ipv4 = "192.168.73.1"
+ipv6 = "[fe80::7269:79ff:feb7:fed%3]"
+i = fra(ipv4, ignore_busy=True, force_connect=True)
 i.claim_ownership(force_connect=True)
 
 
@@ -37,28 +40,26 @@ def convert_to_impedance(Pdbm1, Pdbm2, phi):
 
 def streaming_moku(num_points):
     fig = plt.figure(figsize=(14, 9))
-    axes = []
-    lines = []
+    final_data = None
     
-    plot_cfg = [
-        ('Magnitude (dBm)', 231, True), ('Phase (deg)', 232, True),
-        ('Real Impedance (Ω)', 233, True), ('Imaginary Impedance (Ω)', 234, True),
-        ('Nyquist Plot', 235, False), ('Imaginary Admittance (S)', 236, True)
-    ]
+    # Magnitude (dbm) vs frequência (Hz)
+    ax1 = fig.add_subplot(211)
     
-    for title, sub, is_log in plot_cfg:
-        ax = fig.add_subplot(sub)
-        if is_log:
-            l1, = ax.semilogx([], [], label='Ch1')
-            l2, = ax.semilogx([], [], label='Ch2') if sub in [231, 232] else (None,)
-        else:
-            l1, = ax.plot([], [])
-            l2 = None
-        
-        ax.set_title(title, fontsize=10)
-        ax.grid(True, which='both', alpha=0.3)
-        lines.append((l1, l2))
-        axes.append(ax)
+    (l1,) = ax1.semilogx([], [], label='Ch1')
+    (l2,) = ax1.semilogx([], [], label='Ch2') 
+    
+    ax1.set_title("Magnitude vs Frequency", fontsize=10)
+    ax1.grid(True, which='both', alpha=0.3)
+
+    # Phase (degrees) vs Frequency (Hz)
+    ax2 = fig.add_subplot(212)
+    
+    (l3,) = ax1.semilogx([], [], label='Ch1')
+    (l4,) = ax1.semilogx([], [], label='Ch2') 
+    
+    ax2.set_title("Phase vs Frequency", fontsize=10)
+    ax2.grid(True, which='both', alpha=0.3)
+
 
     plt.ion()
     plt.show()
@@ -68,52 +69,40 @@ def streaming_moku(num_points):
             data = i.get_data()
             ch1, ch2 = data['ch1'], data['ch2']
             
-            freq = np.asarray(ch1['frequency'], dtype=np.float64)
-            if len(freq) == 0:
-                plt.pause(0.1)
-                continue
-
-            z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
-                ch1['magnitude'], ch2['magnitude'], ch2['phase']
-            )
-
-            # Atualização dos eixos
-            plot_data = [
-                (freq, ch1['magnitude'], freq, ch2['magnitude']),
-                (freq, ch1['phase'], freq, ch2['phase']),
-                (freq, z_r, None, None),
-                (freq, z_i, None, None),
-                (z_r, z_i, None, None),
-                (freq, a_i, None, None)
-            ]
-
-            for idx, (x1, y1, x2, y2) in enumerate(plot_data):
-                lines[idx][0].set_data(x1, y1)
-                if lines[idx][1] is not None:
-                    lines[idx][1].set_data(x2, y2)
-                axes[idx].relim()
-                axes[idx].autoscale_view()
+            l1.set_data(ch1["frequency"], ch1["magnitude"])
+            l2.set_data(ch2["frequency"], ch2["magnitude"])
+            l3.set_data(ch1["frequency"], ch1["phase"])
+            l4.set_data(ch2["frequency"], ch2["phase"])
 
             fig.canvas.draw_idle()
             fig.canvas.flush_events()
             
             # CONDIÇÃO DE PARADA
-            if len(freq) >= num_points:
+            freq = np.asarray(ch1['frequency'], dtype=np.float64)
+            mag1 = np.asarray(ch1["magnitude"], dtype=np.float64)
+            mag2 = np.asarray(ch2["magnitude"], dtype=np.float64)
+
+            has_nan = (
+                np.isnan(mag1).any() or
+                np.isnan(mag2).any()
+            )
+            if len(freq) >= num_points and not has_nan:
                 i.stop_sweep()
                 print(f"\nVarredura finalizada com {len(freq)} pontos.")
                 plt.close()
+                final_data = data
                 break
-            
-            plt.pause(0.001)
 
-        # Exportação final
-        final_stack = np.column_stack((freq, ch1['magnitude'], ch2['magnitude'], v1, v2, z_r, z_i, a_r, a_i))
-        np.savetxt("dados_finais.txt", final_stack, header="Freq,Mag1,Mag2,V1,V2,Zr,Zi,Ar,Ai")
-        fig.savefig("fra_plots.png", dpi=300)
-        print("\nArquivos finais salvos com sucesso!")
+            ax1.relim()
+            ax1.autoscale_view()
+            ax2.relim()
+            ax2.autoscale_view()
+            plt.draw()
+            plt.pause(1)
 
     except Exception as e:
         print(f"Erro: {e}")
+    return final_data
 
 def batching_moku(num_points, estimated_time):
     print(f"Aguardando término da varredura (estimado: {estimated_time:.1f}s)...")
@@ -190,23 +179,29 @@ def batching_moku(num_points, estimated_time):
 # === NEW STRUCTURE (Threading) ===
 def acquire_data(i, data_queue, stop_event):
     last_len = 0
-    
     while not stop_event.is_set():
         try: 
-            data = i.get_data()
+            # O FRA pode demorar para responder se o settling_time for alto
+            data = i.get_data(timeout=5) 
 
-            freq = np.asarray(data['ch1']['frequency'], dtype=np.float64)
-            current_len = len(freq)
-            if current_len > last_len:
-                data_queue.put(data, timeout=1)
-                last_len = current_len
+            if data and 'ch1' in data:
+                freq = np.asarray(data['ch1']['frequency'])
+                current_len = len(freq)
+                
+                # Só coloca na fila se o hardware de fato adicionou pontos novos
+                if current_len > last_len:
+                    try:
+                        data_queue.put_nowait(data)
+                        last_len = current_len
+                    except:
+                        pass 
 
-            time.sleep(0.005)
+            time.sleep(0.1) 
 
         except Exception as e:
-          print(f"[ACQ ERROR]: {e}")
-          time.sleep(0.1)
-    
+            # Se for timeout da API do Moku, ignoramos e tentamos de novo
+            time.sleep(0.2)
+
 def process_data(num_points, data_queue):
     final_data = None
     while True:
@@ -264,14 +259,27 @@ def post_processing(final_data, fig_name, csv_name):
             'Freq': freq, 'Mag1': ch1['magnitude'], 'Mag2': ch2['magnitude'],
             'Zr': z_r, 'Zi': z_i, 'Ar': a_r, 'Ai': a_i
         })
-        df.to_csv(csv_name + '.txt', index=False)
+        df.to_csv(csv_name + '.csv', index=False)
         
         print("[SUCESSO] Arquivos finais salvos!")
 
     except Exception as e:
         print(f'[ERROR] Post-Processing failed: {e}')
 
-
+def threading(): 
+    data_queue = Queue(maxsize=100)
+    stop_event = threading.Event()
+    acq_thread = threading.Thread(target=acquire_data, args=(i, data_queue, stop_event), daemon=True)
+    acq_thread.start()
+    final_data = process_data(num_points, data_queue)
+    if final_data: 
+        i.stop_sweep()
+        stop_event.set()
+        acq_thread.join()
+        fig_name = input('Nome do arquivo PNG: ')
+        csv_name = input('Nome do arquivo TXT: ')
+        post_processing(final_data, fig_name, csv_name)
+        
 try: 
     # Modo Input 
     i.measurement_mode("In")
@@ -297,7 +305,7 @@ try:
     
     # Config Sweep
     num_points = 128
-    i.set_sweep(start_frequency=1, stop_frequency=1e6, num_points=num_points,
+    i.set_sweep(start_frequency=1e6, stop_frequency=1e-2, num_points=num_points,
                 averaging_time=1e-3, averaging_cycles=1, settling_time=1e-1,
                 settling_cycles=3, dynamic_amplitude=False
                 )
@@ -317,23 +325,17 @@ try:
         #            RUN SWEEP PROCESS 
         # ===========================================
         print("\nExecutando varredura na frequência...")
-        data_queue = Queue(maxsize=100)
+        i.stop_sweep()
         i.start_sweep()
-        # Process and Plot Functions
-        #streaming_moku()
-        #batching_moku()
-        stop_event = threading.Event()
-        acq_thread = threading.Thread(target=acquire_data, args=(i, data_queue, stop_event), daemon=True)
-        acq_thread.start()
-        final_data = process_data(num_points, data_queue)
-        if final_data: 
-            i.stop_sweep()
-            stop_event.set()
-            acq_thread.join()
-            fig_name = input('Nome do arquivo PNG: ')
-            csv_name = input('Nome do arquivo TXT: ')
+        time.sleep(0.5)
+        final_data = streaming_moku(num_points)
+        if final_data:
+            print("Varredura finalizada, pronto para plotar impedância.")
+            fig_name = input("Nome do arquivo png: ")
+            csv_name = input("Nome do arquivo csv: ")
             post_processing(final_data, fig_name, csv_name)
-        
+
+
 except Exception as e: 
     print(f"Erro na execução do FRA: {e}")
     
