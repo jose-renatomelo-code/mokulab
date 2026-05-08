@@ -101,7 +101,7 @@ def streaming_moku(num_points):
 
     except Exception as e:
         print(f"Erro: {e}")
-    return final_data
+    return final_data, fig
 
 def batching_moku(num_points, estimated_time):
     print(f"Aguardando término da varredura (estimado: {estimated_time:.1f}s)...")
@@ -219,7 +219,7 @@ def process_data(num_points, data_queue):
 
     return final_data
 
-def post_processing(final_data, file_name):
+def post_processing(final_data, file_name, fig_moku):
     try:
         ch1 = final_data['ch1']
         ch2 = final_data['ch2']
@@ -251,7 +251,11 @@ def post_processing(final_data, file_name):
             axes[idx].grid(True, which='both', alpha=0.3)
 
         plt.tight_layout()
+        # Save impedance plot
         fig.savefig(file_name + '.png', dpi=300)
+        # Save moku data plot
+        fig.savefig(file_name + 'moku-data' +'.png', dpi=300)
+
         
         # EXPORTAÇÃO CSV
         df = pd.DataFrame({
@@ -289,7 +293,7 @@ try:
     i.set_frontend(channel=1, impedance='50Ohm', coupling='DC',
                    range='1Vpp', bandwidth='200MHz', strict=True)
     # Output 1
-    i.set_output(channel=1, amplitude=2*0.7, enable_amplitude=True)
+    i.set_output(channel=1, amplitude=2*0.2, enable_amplitude=True)
     i.set_output_termination(channel=1, termination='50Ohm', strict=True)
     
     # ===========================
@@ -299,13 +303,13 @@ try:
     i.set_frontend(channel=2, impedance='50Ohm', coupling='DC',
                    range='1Vpp', bandwidth='200MHz', strict=True)
     # Output 2
-    i.set_output(channel=2, amplitude=2*0.7, enable_amplitude=True)
+    i.set_output(channel=2, amplitude=2*0.2, enable_amplitude=True)
     i.set_output_termination(channel=2, termination='50Ohm', strict=True)
     
     # Config Sweep
     num_points = 128
     i.set_sweep(start_frequency=1e6, stop_frequency=1, num_points=num_points,
-                averaging_time=1, averaging_cycles=10, settling_time=1,
+                averaging_time=1e-1, averaging_cycles=10, settling_time=1e-1,
                 settling_cycles=10, dynamic_amplitude=False, linear_scale=False
                 )
     # Frontend Parameters
@@ -326,10 +330,10 @@ try:
         i.stop_sweep()
         i.start_sweep()
         time.sleep(0.5)
-        final_data = streaming_moku(num_points)
+        final_data, fig_moku = streaming_moku(num_points)
         if final_data:
             file_name = input("Nome do arquivo: ")
-            post_processing(final_data, file_name)
+            post_processing(final_data, file_name, fig_moku)
 
 
 except Exception as e: 
