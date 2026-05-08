@@ -18,7 +18,7 @@ def convert_to_impedance(Pdbm1, Pdbm2, phi):
     p2 = np.asarray(Pdbm2, dtype=np.float64)
     p_deg = np.asarray(phi, dtype=np.float64)
     
-    # Cálculo de Tensão (RMS)
+    # Cálculo de Tensão 
     v1_volt = np.sqrt(2/5 * (10**(p1 / 10)))
     v2_volt = np.sqrt(2/5 * (10**(p2 / 10)))
     
@@ -54,8 +54,8 @@ def streaming_moku(num_points):
     # Phase (degrees) vs Frequency (Hz)
     ax2 = fig.add_subplot(212)
     
-    (l3,) = ax1.semilogx([], [], label='Ch1')
-    (l4,) = ax1.semilogx([], [], label='Ch2') 
+    (l3,) = ax2.semilogx([], [], label='Ch1')
+    (l4,) = ax2.semilogx([], [], label='Ch2') 
     
     ax2.set_title("Phase vs Frequency", fontsize=10)
     ax2.grid(True, which='both', alpha=0.3)
@@ -68,7 +68,6 @@ def streaming_moku(num_points):
         while True:
             data = i.get_data()
             ch1, ch2 = data['ch1'], data['ch2']
-            
             l1.set_data(ch1["frequency"], ch1["magnitude"])
             l2.set_data(ch2["frequency"], ch2["magnitude"])
             l3.set_data(ch1["frequency"], ch1["phase"])
@@ -88,7 +87,7 @@ def streaming_moku(num_points):
             )
             if len(freq) >= num_points and not has_nan:
                 i.stop_sweep()
-                print(f"\nVarredura finalizada com {len(freq)} pontos.")
+                print(f"\nVarredura finalizada com {len(freq)} pontos, pronto para plotagem.")
                 plt.close()
                 final_data = data
                 break
@@ -220,7 +219,7 @@ def process_data(num_points, data_queue):
 
     return final_data
 
-def post_processing(final_data, fig_name, csv_name):
+def post_processing(final_data, file_name):
     try:
         ch1 = final_data['ch1']
         ch2 = final_data['ch2']
@@ -252,14 +251,14 @@ def post_processing(final_data, fig_name, csv_name):
             axes[idx].grid(True, which='both', alpha=0.3)
 
         plt.tight_layout()
-        fig.savefig(fig_name + '.png', dpi=300)
+        fig.savefig(file_name + '.png', dpi=300)
         
         # EXPORTAÇÃO CSV
         df = pd.DataFrame({
             'Freq': freq, 'Mag1': ch1['magnitude'], 'Mag2': ch2['magnitude'],
             'Zr': z_r, 'Zi': z_i, 'Ar': a_r, 'Ai': a_i
         })
-        df.to_csv(csv_name + '.csv', index=False)
+        df.to_csv(file_name + '.csv', index=False)
         
         print("[SUCESSO] Arquivos finais salvos!")
 
@@ -290,7 +289,7 @@ try:
     i.set_frontend(channel=1, impedance='50Ohm', coupling='DC',
                    range='1Vpp', bandwidth='200MHz', strict=True)
     # Output 1
-    i.set_output(channel=1, amplitude=2, enable_amplitude=True)
+    i.set_output(channel=1, amplitude=2*0.7, enable_amplitude=True)
     i.set_output_termination(channel=1, termination='50Ohm', strict=True)
     
     # ===========================
@@ -300,27 +299,26 @@ try:
     i.set_frontend(channel=2, impedance='50Ohm', coupling='DC',
                    range='1Vpp', bandwidth='200MHz', strict=True)
     # Output 2
-    i.set_output(channel=2, amplitude=1, enable_amplitude=True)
+    i.set_output(channel=2, amplitude=2*0.7, enable_amplitude=True)
     i.set_output_termination(channel=2, termination='50Ohm', strict=True)
     
     # Config Sweep
     num_points = 128
-    i.set_sweep(start_frequency=1e6, stop_frequency=1e-2, num_points=num_points,
-                averaging_time=1e-3, averaging_cycles=1, settling_time=1e-1,
-                settling_cycles=3, dynamic_amplitude=False
+    i.set_sweep(start_frequency=1e6, stop_frequency=1, num_points=num_points,
+                averaging_time=1, averaging_cycles=10, settling_time=1,
+                settling_cycles=10, dynamic_amplitude=False, linear_scale=False
                 )
     # Frontend Parameters
     sweep_info = i.get_sweep()
     estimated_time = sweep_info['estimated_sweep_time']
     min, seg = divmod(estimated_time, 60)
     print(f"Tempo estimado da varredura: {int(min)}min {int(seg)}s")
+    print(i.summary())
     continuar = input("Prosseguir? (s/n) ")
     if continuar == 's':
         # === Select Harmonic === 
         harm = int(input("Digite o harmônico desejado: "))
         i.set_harmonic_multiplier(multiplier=harm)
-        print(i.summary())
-
         # ===========================================
         #            RUN SWEEP PROCESS 
         # ===========================================
@@ -330,10 +328,8 @@ try:
         time.sleep(0.5)
         final_data = streaming_moku(num_points)
         if final_data:
-            print("Varredura finalizada, pronto para plotar impedância.")
-            fig_name = input("Nome do arquivo png: ")
-            csv_name = input("Nome do arquivo csv: ")
-            post_processing(final_data, fig_name, csv_name)
+            file_name = input("Nome do arquivo: ")
+            post_processing(final_data, file_name)
 
 
 except Exception as e: 
@@ -349,5 +345,3 @@ finally:
     i.relinquish_ownership()
     print("Conexão encerrada com sucesso!")
     
-    # PLota dados somente no final
-    plt.show()
