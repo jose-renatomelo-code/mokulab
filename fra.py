@@ -36,7 +36,7 @@ def convert_to_impedance(Pdbm1, Pdbm2, phi):
     adm_real = z_real / denom
     adm_img = -z_img / denom
     
-    return z_real, z_img, adm_real, adm_img, v1_volt, v2_volt
+    return z_mod, z_real, z_img, adm_real, adm_img, v1_volt, v2_volt
 
 def streaming_moku(num_points):
     fig = plt.figure(figsize=(14, 9))
@@ -133,7 +133,7 @@ def batching_moku(num_points, estimated_time):
 
         # 3. PROCESSAMENTO MATEMÁTICO
         print("\nGerando gráficos finais e arquivos...")
-        z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
+        z_mod, z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
             ch1['magnitude'], ch2['magnitude'], ch2['phase']
         )
 
@@ -142,7 +142,7 @@ def batching_moku(num_points, estimated_time):
         axes = axes.flatten()
 
         plot_cfg = [
-            ('Real Impedance (Ω)', freq, z_r, True), 
+            ('Real Impedance (Ω)', freq, z_mod, True), 
             ('Imaginary Impedance (Ω)', freq, z_i, True),
             ('Nyquist Plot Z', z_r, z_i, False), 
             ('Real Admittance (S)', freq, a_r, True),
@@ -225,7 +225,7 @@ def post_processing(final_data, file_name, fig_moku):
         ch2 = final_data['ch2']
         freq = np.asarray(ch1['frequency'], dtype=np.float64)
         print("\nGerando gráficos finais e arquivos...")
-        z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
+        z_mod, z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
             ch1['magnitude'], ch2['magnitude'], ch2['phase']
         )
 
@@ -234,7 +234,7 @@ def post_processing(final_data, file_name, fig_moku):
         axes = axes.flatten()
 
         plot_cfg = [
-            ('Real Impedance (Ω)', freq, z_r, True), 
+            ('Real Impedance (Ω)', freq, z_mod, True), 
             ('Imaginary Impedance (Ω)', freq, z_i, True),
             ('Nyquist Plot Z', z_r, z_i, False), 
             ('Real Admittance (S)', freq, a_r, True),
@@ -252,9 +252,9 @@ def post_processing(final_data, file_name, fig_moku):
 
         plt.tight_layout()
         # Save impedance plot
-        fig.savefig(file_name + '.png', dpi=300)
+        fig.savefig("Data/" + file_name + '.png', dpi=300)
         # Save moku data plot
-        fig.savefig(file_name + 'moku-data' +'.png', dpi=300)
+        fig.savefig("Data/" + file_name + 'moku-data' +'.png', dpi=300)
 
         
         # EXPORTAÇÃO CSV
@@ -309,8 +309,8 @@ try:
     # Config Sweep
     num_points = 128
     i.set_sweep(start_frequency=1e6, stop_frequency=1, num_points=num_points,
-                averaging_time=1e-1, averaging_cycles=10, settling_time=1e-1,
-                settling_cycles=10, dynamic_amplitude=False, linear_scale=False
+                averaging_time=1e-1, averaging_cycles=1, settling_time=1e-1,
+                settling_cycles=1, dynamic_amplitude=False, linear_scale=False
                 )
     # Frontend Parameters
     sweep_info = i.get_sweep()
