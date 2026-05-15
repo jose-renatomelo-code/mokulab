@@ -12,31 +12,28 @@ i = fra(ipv4, ignore_busy=True, force_connect=True)
 i.claim_ownership(force_connect=True)
 
 
-def convert_to_impedance(Pdbm1, Pdbm2, phi):
+def convert_to_impedance(Pdbm1, Pdbm2, phi1, phi2):
     # Forçar conversão para float64 e tratar como array NumPy
     p1 = np.asarray(Pdbm1, dtype=np.float64)
     p2 = np.asarray(Pdbm2, dtype=np.float64)
-    p_deg = np.asarray(phi, dtype=np.float64)
+    phase_ch1_rad = np.radians(np.asarray(phi1, dtype=np.float64))
+    phase_ch2_rad = np.radians(np.asarray(phi2, dtype=np.float64))
     
     # Cálculo de Tensão 
     v1_volt = np.sqrt(2/5 * (10**(p1 / 10)))
     v2_volt = np.sqrt(2/5 * (10**(p2 / 10)))
     
     # Cálculo da Impedância
-    # Z = ((V2/V1) - 1) * 50
+    # Z_REAL = ((v2/v1)*np.cos(phase_ch2_rad - phase_ch1_rad) -1) * 50
+    # Z_IMAGINARIO = (50*(v2/v1)*np.sin(phase_ch2_rad - phase_ch1_rad))
     ratio = np.divide(v2_volt, (v1_volt + 1e-12))
-    z_mod = (ratio - 1) * 50 
-    
-    phi_rad = np.radians(p_deg)
-    z_real = z_mod * np.cos(phi_rad)
-    z_img = z_mod * np.sin(phi_rad)
-    
+    z_real = ((ratio)*np.cos(phase_ch2_rad - phase_ch1_rad) - 1) * 50
+    z_img = (50*(ratio)*np.sin(phase_ch2_rad - phase_ch1_rad))
     # Admitância
-    denom = (z_mod**2 + 1e-12)
-    adm_real = z_real / denom
-    adm_img = -z_img / denom
+    adm_real = 1 / z_real
+    adm_img = 1 / z_img
     
-    return z_mod, z_real, z_img, adm_real, adm_img, v1_volt, v2_volt
+    return z_real, z_img, adm_real, adm_img, v1_volt, v2_volt
 
 def streaming_moku(num_points):
     fig = plt.figure(figsize=(14, 9))
@@ -133,8 +130,8 @@ def batching_moku(num_points, estimated_time):
 
         # 3. PROCESSAMENTO MATEMÁTICO
         print("\nGerando gráficos finais e arquivos...")
-        z_mod, z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
-            ch1['magnitude'], ch2['magnitude'], ch2['phase']
+        z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
+            ch1['magnitude'], ch2['magnitude'], ch1['phase'], ch2['phase']
         )
 
         # 4. PLOTAGEM
@@ -142,7 +139,7 @@ def batching_moku(num_points, estimated_time):
         axes = axes.flatten()
 
         plot_cfg = [
-            ('Real Impedance (Ω)', freq, z_mod, True), 
+            ('Real Impedance (Ω)', freq, z_r, True), 
             ('Imaginary Impedance (Ω)', freq, z_i, True),
             ('Nyquist Plot Z', z_r, z_i, False), 
             ('Real Admittance (S)', freq, a_r, True),
@@ -225,8 +222,8 @@ def post_processing(final_data, file_name, fig_moku):
         ch2 = final_data['ch2']
         freq = np.asarray(ch1['frequency'], dtype=np.float64)
         print("\nGerando gráficos finais e arquivos...")
-        z_mod, z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
-            ch1['magnitude'], ch2['magnitude'], ch2['phase']
+        z_r, z_i, a_r, a_i, v1, v2 = convert_to_impedance(
+            ch1['magnitude'], ch2['magnitude'], ch1['phase'], ch2['phase']
         )
 
         # PLOTAGEM
@@ -234,7 +231,7 @@ def post_processing(final_data, file_name, fig_moku):
         axes = axes.flatten()
 
         plot_cfg = [
-            ('Real Impedance (Ω)', freq, z_mod, True), 
+            ('Real Impedance (Ω)', freq, z_r, True), 
             ('Imaginary Impedance (Ω)', freq, z_i, True),
             ('Nyquist Plot Z', z_r, z_i, False), 
             ('Real Admittance (S)', freq, a_r, True),
@@ -303,7 +300,7 @@ try:
     i.set_frontend(channel=2, impedance='50Ohm', coupling='DC',
                    range='1Vpp', bandwidth='200MHz', strict=True)
     # Output 2
-    i.set_output(channel=2, amplitude=2*0.2, enable_amplitude=True)
+    i.set_output(channel=2, amplitude=2*0.2, enable_amplitude=False)
     i.set_output_termination(channel=2, termination='50Ohm', strict=True)
     
     # Config Sweep
