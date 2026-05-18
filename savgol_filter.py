@@ -64,6 +64,15 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
         z_mod = np.sqrt(z_r**2 + z_i**2)
         z_ang = np.degrees(np.arctan2(z_i, z_r))
 
+        # --- Impedância teórica do RC ---
+        r = 1e3
+        c = 5.1e-9
+        n = 1 # harmonic number
+        freq_read = n * freq
+        denom = 1 + 4 * (np.pi**2) * (freq_read**2) * (r**2) * (c**2)  
+        z_rc_real = r / denom
+        z_rc_imag = -(2*np.pi*freq_read*(r**2)*c) / denom
+
         # ------------------------------------------------------------------ #
         # PLOTAGEM                                                             #
         # ------------------------------------------------------------------ #
@@ -104,6 +113,7 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
         axes[1, 0].semilogx(freq, zr_raw, 'gray', lw=0.8, alpha=0.6,
                             label='Raw')
         axes[1, 0].semilogx(freq, z_r, 'b-', lw=1.5, label='Suavizado')
+        axes[1, 0].semilogx(freq, z_rc_real, 'r--', lw=1.5, label='Teórica')
         axes[1, 0].set_title("Z' real (Ω)")
         axes[1, 0].legend(fontsize=8)
         axes[1, 0].grid(True, which='both', alpha=0.3)
@@ -111,12 +121,14 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
         axes[1, 1].semilogx(freq, zi_raw, 'gray', lw=0.8, alpha=0.6,
                             label='Raw')
         axes[1, 1].semilogx(freq, z_i, 'b-', lw=1.5, label='Suavizado')
+        axes[1, 1].semilogx(freq, z_rc_imag, 'r--', lw=1.5, label='Teórica')
         axes[1, 1].set_title("Z'' imag (Ω)")
         axes[1, 1].legend(fontsize=8)
         axes[1, 1].grid(True, which='both', alpha=0.3)
 
         axes[1, 2].plot(z_r, z_i, 'b-', lw=1.5)
         axes[1, 2].plot(z_r, z_i, 'b.', ms=3, alpha=0.5)
+        axes[1, 2].plot(z_rc_real, z_rc_imag, 'r--', lw=1.5)
         axes[1, 2].set_title("Nyquist Z")
         axes[1, 2].set_xlabel("Z' (Ω)")
         axes[1, 2].set_ylabel("Z'' (Ω)")
@@ -154,6 +166,6 @@ if __name__ == "__main__":
         "RC-P15-14_20260515_165520_Traces",
         sg_window=11,   # aumentar para mais suavização
         sg_poly=2,
-        freq_min=5,     # corta abaixo de 5 Hz (drift de fase)
-        freq_max=5e5,   # corta acima de 500 kHz (SNR ruim no CH1)
+        freq_min=1,     # corta abaixo de 5 Hz (drift de fase)
+        freq_max=1e6,   # corta acima de 500 kHz (SNR ruim no CH1)
     )
