@@ -65,8 +65,8 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
         z_ang = np.degrees(np.arctan2(z_i, z_r))
 
         # --- Impedância teórica do RC ---
-        r = 1e3
-        c = 5.1e-9
+        r = 200
+        c = 1e-9
         n = 1 # harmonic number
         freq_read = n * freq
         denom = 1 + 4 * (np.pi**2) * (freq_read**2) * (r**2) * (c**2)  
@@ -137,20 +137,34 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
         axes[1, 2].grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plt.savefig(file_name + "_impedance.png", dpi=150, bbox_inches='tight')
         plt.show()
 
-        # --- Exporta CSV com resultados ---
-        out = pd.DataFrame({
-            'frequency_hz': freq,
-            'z_real_ohm':   z_r,
-            'z_imag_ohm':   z_i,
-            'z_mod_ohm':    z_mod,
-            'z_phase_deg':  z_ang,
-            'delta_phase_deg': np.degrees(delta_phase),
-        })
-        out.to_csv(file_name + "_Z.csv", index=False)
-        print(f"[OK] Z salvo em {file_name}_Z.csv")
+        fig_cap, axes_2 = plt.subplots(1, 2, figsize=(16, 9))
+        fig.suptitle(file_name.split("/")[-1], fontsize=11, y=1.01)
+
+        # Linha 1: Capacitância
+        C = np.clip(z_i, a_min=None, a_max=0) # termo negativo da impedancia imaginaria
+        C_teorica = np.clip(z_rc_imag, a_min=None, a_max=0)
+        axes_2[0].semilogx(freq, C, 'b-', lw=0.8,
+                            label='Raw')
+        axes_2[0].semilogx(freq, C_teorica, 'r--', lw=0.8,
+                            label='Teórico')
+        axes_2[0].set_title('Capacitância')
+        axes_2[0].legend(fontsize=8)
+        axes_2[0].grid(True, which='both', alpha=0.3)
+
+        epslon = None
+        axes_2[1].semilogx(freq, C, 'b-', lw=0.8,
+                            label='Raw')
+        axes_2[1].semilogx(freq, C_teorica, 'r--', lw=0.8,
+                            label='Teórico')
+        axes_2[1].set_title('Permissividade')
+        axes_2[1].legend(fontsize=8)
+        axes_2[1].grid(True, which='both', alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
         print(f"     |Z| médio: {z_mod.mean():.1f} Ω  (std: {z_mod.std():.1f} Ω)")
         print(f"     Z_real:    {z_r.mean():.1f} Ω  (std: {z_r.std():.1f} Ω)")
         print(f"     Z_imag:    {z_i.mean():.1f} Ω  (std: {z_i.std():.1f} Ω)")
@@ -163,7 +177,7 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
 # ── Uso ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     post_processing(
-        "RC-P15-14_20260515_165520_Traces",
+        "pvk_cell1_marcos_1harm_light_20260519_183109_Traces",
         sg_window=11,   # aumentar para mais suavização
         sg_poly=2,
         freq_min=1,     # corta abaixo de 5 Hz (drift de fase)
