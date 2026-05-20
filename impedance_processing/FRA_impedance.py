@@ -1,5 +1,5 @@
 from impedance.models.circuits import Randles, CustomCircuit
-from impedance.visualization import plot_nyquist
+from impedance.visualization import plot_nyquist, plot_residuals
 from pandas import read_csv
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,6 +29,11 @@ def processing_mokuFRA(file_name):
 
         z_mod = np.sqrt(z_r**2 + z_i**2)
         z_ang = np.degrees(np.arctan2(z_i, z_r))
+
+        # Capacitância
+        mascara_cap = z_i < 0
+        C = np.full_like(z_i, np.nan, dtype=float)
+        C = -1 / (2 * np.pi * freq[mascara_cap] * z_i[mascara_cap])
 
         # === PLOT DADOS MOKU + IMPEDÂNCIA CALCULADA === 
         fig, axes = plt.subplots(2, 3, figsize=(16, 9))
@@ -63,14 +68,12 @@ def processing_mokuFRA(file_name):
         axes[1, 1].legend(fontsize=8)
         axes[1, 1].grid(True, which='both', alpha=0.3)
 
-        axes[1, 2].plot(z_r, z_i, 'b.', lw=0.8)
-        axes[1, 2].set_title("Nyquist Z")
-        axes[1, 2].set_xlabel("Z' (Ω)")
-        axes[1, 2].set_ylabel("Z'' (Ω)")
-        axes[1, 2].set_aspect('equal', adjustable='datalim')
-        axes[1, 2].axhline(0, color='k', lw=0.5, alpha=0.4)
-        axes[1, 2].grid(True, alpha=0.3)
-        axes[1, 2].invert_yaxis()
+        axes[1, 2].semilogx(z_r, z_i, 'b--', lw=1.0)
+        axes[1, 2].set_title("Nyquist")
+        axes[1, 2].set_xlabel("Z'")
+        axes[1, 2].set_ylabel("Z''")
+        axes[1, 2].legend(fontsize=8)
+        axes[1, 2].grid(True, which='both', alpha=0.3)
 
         plt.tight_layout()
         #plt.show()
@@ -82,18 +85,24 @@ def processing_mokuFRA(file_name):
 
 def fitting_impedance(freq, z, predict):
     randles = Randles(initial_guess=[.01, .005, .001, 200, .1])
-    randlesCPE = Randles(initial_guess=[.01, .005, .001, 200, .1, .9], CPE=True)
-    customCircuit = CustomCircuit(initial_guess=[.01, .005, .1, .005, .1, .001, 200],
-                                  circuit='R_0-p(R_1,C_1)-p(R_2,C_2)-Wo_1')
-    customConstantCircuit = CustomCircuit(initial_guess=[None, .005, .1, .005, .1, .001, None],
-                                          constants={'R_0': 0.02, 'Wo_1_1': 200},
-                                          circuit='R_0-p(R_1,C_1)-p(R_2,C_2)-Wo_1')
+    randlesCPE = Randles(initial_guess=[50.0, 1500.0, 300.0, 0.1, 1e-7, 0.85], CPE=True)
+    customCircuit1 = CustomCircuit(initial_guess=[25.0, 1000.0, 100.0, 300.0, 0.1, 1e-7, 1e-9, 200.0],
+                                  circuit='R_0-p(R_1-p(R_2-Wo_1, C1), C_2, R_3)')
+    customCircuit2 = CustomCircuit(initial_guess=[25.0, 400.0, 1e-5, 0.95, 300.0, 1e-4, 0.85], 
+                                   circuit='R_0-p(R_1, CPE_0)-p(R_2, CPE_1)')
+    customCircuit3 = CustomCircuit(initial_guess=[25.0, 500.0, 1e-7, 0.85, 500.0, 0.1], 
+                                   circuit='R_0-p(R_1,CPE_1)-Wo_1')
 
     # Primeiro faz o fit (ajusta parâmetros in-place)
     randles.fit(freq, z)
     randlesCPE.fit(freq, z)
-    customCircuit.fit(freq, z)
-    customConstantCircuit.fit(freq, z)
+    customCircuit1.fit(freq, z)
+    low_bounds =  [10.0,  350.0, 1e-7, 0.85, 200.0,  1e-5, 0.50]
+    high_bounds = [50.0,  500.0, 1e-3, 1.00, 5000.0, 1e-1, 0.95]
+    customCircuit2.fit(freq, z, bounds=(low_bounds, high_bounds), weight_by_modulus=True)
+
+    #print(randlesCPE)
+    print(customCircuit2)
 
     # Define frequências para predição
     f_plot = np.logspace(np.log10(freq.max()), np.log10(freq.min()), 200) if predict else freq
@@ -101,22 +110,29 @@ def fitting_impedance(freq, z, predict):
     # Gera impedâncias preditas
     randles_fit            = randles.predict(f_plot)
     randles_CPE_fit        = randlesCPE.predict(f_plot)
-    customCircuit_fit      = customCircuit.predict(f_plot)
-    customConstantCircuit_fit = customConstantCircuit.predict(f_plot)
+    customCircuit_fit      = customCircuit2.predict(f_plot)
 
-    print(randles_CPE_fit)
+
+    # Cálculo de resíduos
+    res_real_randles = (z - randles_CPE_fit).real/np.abs(z)
+    res_imag_randles = (z - randles_CPE_fit).imag/np.abs(z)
+    res_real_custom = (z - customCircuit_fit).real/np.abs(z)
+    res_imag_custom = (z - customCircuit_fit).imag/np.abs(z)
+
     
-    fig, ax = plt.subplots(figsize=(10, 6))
-    plot_nyquist(z, ax=ax)
+    fig, ax = plt.subplots(figsize=(10, 6), nrows=1, ncols=2)
+    plot_nyquist(z, ax=ax[0])
     #plot_nyquist(randles_fit, fmt='-', ax=ax)
-    plot_nyquist(randles_CPE_fit, fmt='-', ax=ax)
-    #plot_nyquist(customCircuit_fit, fmt='-', ax=ax)
-    #plot_nyquist(customConstantCircuit_fit, fmt='-', ax=ax)
-    #ax.legend(["Data", "Randles", "Randles CPE", "CustomCircuit", "CustomConstantCircuit"])
+    plot_nyquist(randles_CPE_fit, fmt='-', ax=ax[0])
+    plot_nyquist(customCircuit_fit, fmt='-', ax=ax[0])
+    ax[0].legend(["Data", "Randles CPE", "Custom"])
+    plot_residuals(ax=ax[1], f=freq, res_real=res_real_randles, res_imag=res_imag_randles, y_limits=((-20, 20)))
+    plot_residuals(ax=ax[1], f=freq, res_real=res_real_custom, res_imag=res_imag_custom, y_limits=((-20, 20)))
+
 
     plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
-    freq, z = processing_mokuFRA("Data/pvk_cell1_marcos_1harm_light_20260519_183109_Traces")
+    freq, z = processing_mokuFRA("Data/pvk_dev1_cell1_harm3_20260520_155122_Traces")
     fitting_impedance(freq, z, predict=False)
