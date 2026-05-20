@@ -178,8 +178,8 @@ def post_processing(file_name, sg_window=11, sg_poly=2, freq_min=None, freq_max=
 if __name__ == "__main__":
     post_processing(
         "pvk_cell1_marcos_1harm_light_20260519_183109_Traces",
-        sg_window=11,   # aumentar para mais suavização
+        sg_window=11,  
         sg_poly=2,
-        freq_min=1,     # corta abaixo de 5 Hz (drift de fase)
-        freq_max=1e6,   # corta acima de 500 kHz (SNR ruim no CH1)
+        freq_min=1,    
+        freq_max=1e6,   
     )
