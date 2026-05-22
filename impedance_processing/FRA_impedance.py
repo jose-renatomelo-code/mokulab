@@ -134,5 +134,5 @@ def fitting_impedance(freq, z, predict):
     plt.show()
 
 if __name__ == "__main__":
-    freq, z = processing_mokuFRA("Data/pvk_dev1_cell1_harm3_20260520_155122_Traces")
+    freq, z = processing_mokuFRA("Data/pvk_dev1_cell1_day2_light_20260520_145155_Traces")
     fitting_impedance(freq, z, predict=False)
